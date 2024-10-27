@@ -6,52 +6,14 @@ SERVER_ADDRESS = "http://192.168.178.147:65535"
 def reverseConnectFromPhoneToDevMachineToPhone():
     class StartADBConnectServerHandler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            """
-            Inform user about which script to install in .shortcuts in termux....
-            :return:
-            """
-            response = """#!/data/data/com.termux/files/usr/bin/env bash
-# script to tell the developer machine to connect to the phone calling this script. Yolo.
-#
-# Put me under .shortcuts/ in termux and create a shortcut on desktop or something
-#
-# install missing commands if needed with `$0 install`
-
-# update with dev machine ip address
-server='SERVER_ADDRESS'
-
-if [[ ${1} == "install" ]]; then
-    command termux-clipboard-get 2> /dev/null && pkg install termux-api
-    command curl 2> /dev/null && pkg install curl
-    command jq 2> /dev/null && pkg install jq
-fi
-
-client="$(termux-clipboard-get)"
-echo "(clipboard) client= ${client}."
-
-if ! [[ "${client}" =~ ":" ]]; then
-        client="$(termux-dialog text -t 'Enter Wireless Debug Address' -i 'ip:port' | jq -r .text)"
-        echo "User dialog provided client '${client}'."
-
-        if ! [[ "${client}" =~ ":" ]]; then
-                termux-dialog confirm -t 'Failure' -i "'${client}' is an invalid IP." > /dev/null 2>&1
-                exit
-        fi
-fi
-
-result="$(curl --silent "${server}" -d "${client}")"
-echo "${result}"
-
-termux-dialog confirm -t 'Result' -i "${result}" > /dev/null 2>&1
-
-""".replace("SERVER_ADDRESS", SERVER_ADDRESS)
-
             print(f"GET request from {self.client_address}.")
 
+            response = open("index.html").read()
+            
             self.wfile.write(
                 f'HTTP/1.1 200 OK\n'
                 f'Server: adb-yolo.py/0.0.01-SNAPSHOT\n'
-                f'Content-Type: application/json; charset=UTF-8\n'
+                f'Content-Type: text/html; charset=UTF-8\n'
                 f'Content-Length: {len(response)}\n'
                 f'\n{response}'
                 .encode('utf-8')
@@ -64,13 +26,17 @@ termux-dialog confirm -t 'Result' -i "${result}" > /dev/null 2>&1
             print(f"Received {request} from {self.client_address}.")
 
             if ':' in request:
-                response = call_adb(request)
-                response_code = 200
+                try:
+                    response = call_adb(request)
+                    response_code = 200
+                except Exception as e:
+                    response = f"Error: {e}."
+                    response_code = 400
             else:
-                response = "Invalid payload. Please provide a body of 'ip:port' as POST payload."
+                response = "Invalid payload. Please provide a body of 'ip=host:port' as POST payload."
                 response_code = 400
 
-            print(f"adb says: {response}")
+            print(response)
             self.wfile.write(
                 f'HTTP/1.1 {response_code} OK\n'
                 f'Server: adb-yolo.py/0.0.01-SNAPSHOT\n'
@@ -93,10 +59,14 @@ termux-dialog confirm -t 'Result' -i "${result}" > /dev/null 2>&1
 
 def call_adb(request):
     import subprocess
+    name, value = request.split('=')
 
-    # start adb with that connectio
-    ip, port = request.split(":")
-    adb_command = ('adb', 'connect', f'{ip}:{port}',)
+    if name != 'ip':
+        return f'Wrong parameter name, excpected "ip", not "{name}".'
+
+    # start adb with that connection
+    host, port = value.split(":") # check user input? nah!
+    adb_command = ('adb', 'connect', f'{host}:{port}',)
 
     process = subprocess.Popen(
         adb_command,
